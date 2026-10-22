@@ -5,7 +5,7 @@ Interner UI-Prototyp für die Bearbeitung von Social-Recruiting-Bewerbungen aus 
 ## Aktueller Stand
 
 - Bewerbungsübersicht mit Suche und Filtern für Status, Standort und Recruiterin
-- Detailansicht mit allen fünf besprochenen Fragen plus Vorname, E-Mail und Telefon
+- Detailansicht mit den sieben Fragen des Lkw-Reifenmonteur-Formulars plus Vorname, E-Mail und Telefon
 - Status, Zuständigkeit, Wiedervorlage, Notizen und lokaler Bearbeitungsverlauf
 - Ansicht für fällige Wiedervorlagen; abgeschlossene Fälle werden ausgeschlossen
 - Formularverzeichnis als Demo einer expliziten Freigabeliste
@@ -37,7 +37,7 @@ GitHub Actions führt diese Prüfungen bei Änderungen aus.
 
 ## Formularfreigabe
 
-Es sollen immer neue Formulare hinzukommen können, ohne die Anwendung für jeden Job umzuschreiben. Jedes Formular benötigt ausdrücklich freigegebene Seiten-ID + Formular-ID und eine Zuordnung zu Stelle und Standort. Neue und unbekannte Formulare bleiben ausgeschlossen. Die aktuelle Beispieldatenliste enthält zwei zugeordnete Formulare und ein nicht freigegebenes neues Formular.
+Es sollen immer neue Formulare hinzukommen können, ohne die Anwendung für jeden Job umzuschreiben. Jedes Formular benötigt ausdrücklich freigegebene Seiten-ID + Formular-ID und eine Zuordnung zu Stelle und Standort. Neue und unbekannte Formulare bleiben ausgeschlossen. Die aktuelle Beispieldatenliste enthält ein zugeordnetes Mehrstandort-Formular für Lkw-Reifenmonteure in Bühl und Heilbronn sowie ein nicht freigegebenes neues Formular. Der Standort wird aus der Antwort auf Frage 7 ermittelt; fehlende oder unbekannte Antworten werden als Prüffall markiert.
 
 Die Originalfragen und Antworten bleiben als Liste je Bewerbung erhalten. Eine feste Spaltenanzahl beschränkt die möglichen Fragen nicht. Der spätere Server muss die Freigabeliste verbindlich prüfen. Die Browserfunktion ist nur Demonstration und keine Sicherheitsgrenze.
 

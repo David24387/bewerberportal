@@ -4,16 +4,74 @@
 const STATUSES=['Neu','Kontaktversuch','Im Gespräch','An Fachbereich übergeben','Eingestellt','Abgesagt'];
 const OWNERS=['Nicht zugewiesen','Recruiterin A','Recruiterin B'];
 const CLOSED=['Eingestellt','Abgesagt'];
-const QUESTIONS=[
- 'Welche Ausbildung bringst du mit?',
- 'Wie viel Berufserfahrung hast du bereits?',
- 'Über welchen Weg können wir dich am besten kontaktieren?',
- 'Wann können wir dich am besten telefonisch erreichen?',
- 'Was machst du aktuell beruflich?'
+const LKW_QUESTIONS=[
+  {
+    "id": "driving_license",
+    "question": "Welchen Führerschein hast du?",
+    "options": [
+      "Klasse B (Auto)",
+      "Klasse C1 (LKW bis 7,5 t)",
+      "Klasse C/CE (LKW über 7,5 t)",
+      "Keinen Führerschein"
+    ]
+  },
+  {
+    "id": "training",
+    "question": "Hast du eine Ausbildung als KFZ-Mechatroniker oder etwas Vergleichbares?",
+    "options": [
+      "Ja",
+      "Nein"
+    ]
+  },
+  {
+    "id": "truck_tire_experience",
+    "question": "Hast du Erfahrung in der LKW-Reifenmontage?",
+    "options": [
+      "Ja",
+      "Nein"
+    ]
+  },
+  {
+    "id": "experience",
+    "question": "Wieviel Berufserfahrung hast du bereits?",
+    "options": [
+      "Berufseinsteiger",
+      "1 - 4 Jahre",
+      "4 - 10 Jahre",
+      "Über 10 Jahre"
+    ]
+  },
+  {
+    "id": "contact_method",
+    "question": "Über welchen Weg können wir dich am besten kontaktieren?",
+    "options": [
+      "E-Mail",
+      "Telefon / Anruf"
+    ]
+  },
+  {
+    "id": "phone_availability",
+    "question": "Wann können wir dich am besten telefonisch erreichen?",
+    "options": [
+      "Morgens",
+      "Mittags",
+      "Nachmittags",
+      "Abends"
+    ],
+    "conditional": true
+  },
+  {
+    "id": "location",
+    "question": "Für welchen Standort interessierst du dich?",
+    "options": [
+      "77815/Bühl",
+      "74076/Heilbronn"
+    ]
+  }
 ];
+const QUESTIONS=LKW_QUESTIONS.map(q=>q.question);
 const FORMS=[
- {id:'DEMO-FORM-MECH-01',pageId:'DEMO-PAGE',name:'Kfz-Mechatronik · Frankfurt',job:'Kfz-Mechatroniker/in',location:'Frankfurt am Main',enabled:true},
- {id:'DEMO-FORM-MECH-02',pageId:'DEMO-PAGE',name:'Kfz-Mechatronik · Stadtbergen',job:'Kfz-Mechatroniker/in',location:'Stadtbergen',enabled:true},
+ {id:'DEMO-FORM-LKW-01',pageId:'DEMO-PAGE',name:'Lkw-Reifenmonteur · Bühl / Heilbronn',job:'Lkw-Reifenmonteur/in',locationQuestionId:'location',locationOptions:['77815/Bühl','74076/Heilbronn'],questions:LKW_QUESTIONS,enabled:true},
  {id:'DEMO-FORM-NEW-03',pageId:'DEMO-PAGE',name:'Neues Formular · noch nicht freigegeben',job:'',location:'',enabled:false}
 ];
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -21,7 +79,7 @@ const statusClass=s=>'status-'+s.normalize('NFD').replace(/[\u0300-\u036f]/g,'')
 function today(){const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')}
 function offsetDate(days){const d=new Date();d.setDate(d.getDate()+days);return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')}
 function due(record,day=today()){return !!record.followUp&&record.followUp<=day&&!CLOSED.includes(record.status)}
-function allowedForm(forms,pageId,formId){return forms.find(f=>f.enabled&&f.id===formId&&f.pageId===pageId&&f.job&&f.location)||null}
+function allowedForm(forms,pageId,formId){return forms.find(f=>f.enabled&&f.id===formId&&f.pageId===pageId&&f.job&&(f.location||(f.locationQuestionId&&f.locationOptions?.length)))||null}
 function filterRecords(records,filters={},day=today()){
  const query=String(filters.search||'').toLocaleLowerCase('de').trim();
  return records.filter(r=>(!filters.status||r.status===filters.status)&&(!filters.location||r.location===filters.location)&&(!filters.owner||r.owner===filters.owner)&&(!filters.due||due(r,day))&&(!query||[r.firstName,r.email,r.phone,r.job,r.location,...r.answers.map(a=>a.answer)].join(' ').toLocaleLowerCase('de').includes(query))).sort((a,b)=>b.createdAt.localeCompare(a.createdAt));
@@ -38,21 +96,31 @@ function addNote(record,text,at=new Date().toISOString()){
  if(clean.length>4000)throw Error('Notiz ist zu lang (maximal 4.000 Zeichen).');
  return {...record,notes:[{at,text:clean},...record.notes],history:[{at,text:'Interne Demo-Notiz hinzugefügt'},...record.history]};
 }
+function applicationLocation(form,answers){
+ if(form.location)return form.location;
+ const answer=answers.find(a=>a.fieldId===form.locationQuestionId)?.answer;
+ return form.locationOptions?.includes(answer)?answer:'Standort fehlt – prüfen';
+}
 function fixtures(){
  const specs=[
- ['Alex','Frankfurt am Main','Neu','Nicht zugewiesen',0,'1–4 Jahre','Abgeschlossene Ausbildung als Kfz-Mechatroniker oder Kfz-Mechaniker','Telefon / Anruf','Nachmittags (14–17 Uhr)','Ich arbeite aktuell als Kfz-Mechatroniker in einer freien Werkstatt.'],
- ['Robin','Stadtbergen','Kontaktversuch','Recruiterin A',0,'Über 10 Jahre','Abgeschlossene Ausbildung als Kfz-Mechatroniker oder Kfz-Mechaniker','Telefon / Anruf','Abends (ab 17 Uhr)','Aktuell in einer Vertragswerkstatt beschäftigt.'],
- ['Kim','Frankfurt am Main','Im Gespräch','Recruiterin B',1,'4–10 Jahre','Keine Kfz-Ausbildung, aber mehrjährige Praxis in einer Kfz-Werkstatt','E-Mail','Morgens (08–12 Uhr)','Seit mehreren Jahren in einer Kfz-Werkstatt tätig.'],
- ['Charlie','Stadtbergen','An Fachbereich übergeben','Recruiterin A',2,'Berufseinsteiger','Abgeschlossene Ausbildung als Kfz-Mechatroniker oder Kfz-Mechaniker','E-Mail','Mittags (12–14 Uhr)','Ich habe meine Ausbildung abgeschlossen und suche meinen Berufseinstieg.'],
- ['Sam','Frankfurt am Main','Neu','Nicht zugewiesen',-1,'1–4 Jahre','Keine Kfz-Ausbildung, aber mehrjährige Praxis in einer Kfz-Werkstatt','Telefon / Anruf','Nachmittags (14–17 Uhr)','Ich arbeite derzeit im Reifenservice.'],
- ['Jules','Stadtbergen','Eingestellt','Recruiterin B',-2,'4–10 Jahre','Abgeschlossene Ausbildung als Kfz-Mechatroniker oder Kfz-Mechaniker','Telefon / Anruf','Morgens (08–12 Uhr)','Kfz-Mechatroniker mit Schwerpunkt Wartung und Diagnose.']
+ ['Alex','77815/Bühl','Neu','Nicht zugewiesen',0,'1 - 4 Jahre','Klasse B (Auto)','Ja','Ja','Telefon / Anruf','Nachmittags'],
+ ['Robin','74076/Heilbronn','Kontaktversuch','Recruiterin A',0,'Über 10 Jahre','Klasse C/CE (LKW über 7,5 t)','Ja','Ja','Telefon / Anruf','Abends'],
+ ['Kim','77815/Bühl','Im Gespräch','Recruiterin B',1,'4 - 10 Jahre','Klasse C1 (LKW bis 7,5 t)','Nein','Ja','E-Mail',null],
+ ['Charlie','74076/Heilbronn','An Fachbereich übergeben','Recruiterin A',2,'Berufseinsteiger','Klasse B (Auto)','Ja','Nein','E-Mail',null],
+ ['Sam','77815/Bühl','Neu','Nicht zugewiesen',-1,'1 - 4 Jahre','Klasse B (Auto)','Nein','Ja','Telefon / Anruf','Morgens'],
+ ['Jules','74076/Heilbronn','Eingestellt','Recruiterin B',-2,'4 - 10 Jahre','Klasse C/CE (LKW über 7,5 t)','Ja','Ja','Telefon / Anruf','Mittags']
  ];
- return specs.map((s,i)=>{const at=new Date(Date.now()-i*19*60*60*1000).toISOString();return {id:'DEMO-LEAD-'+(i+1),firstName:s[0]+' (Demo)',email:s[0].toLowerCase()+'.demo@example.com',phone:'Nicht hinterlegt (Demo)',job:'Kfz-Mechatroniker/in',location:s[1],status:s[2],owner:s[3],followUp:i===0?'':offsetDate(s[4]),createdAt:at,formId:s[1]==='Stadtbergen'?FORMS[1].id:FORMS[0].id,answers:QUESTIONS.map((question,j)=>({question,answer:[s[6],s[5],s[7],s[8],s[9]][j]})),notes:[],history:[{at,text:'Fiktive Bewerbung für die Vorschau erstellt'}]};});
+ return specs.map((s,i)=>{
+ const at=new Date(Date.now()-i*19*60*60*1000).toISOString();
+ const values=[s[6],s[7],s[8],s[5],s[9],s[10],s[1]];
+ const answers=LKW_QUESTIONS.map((q,j)=>({fieldId:q.id,question:q.question,answer:values[j]??'',skipped:q.id==='phone_availability'&&s[9]==='E-Mail'}));
+ return {id:'DEMO-LEAD-'+(i+1),firstName:s[0]+' (Demo)',email:s[0].toLowerCase()+'.demo@example.com',phone:'Nicht hinterlegt (Demo)',job:FORMS[0].job,location:applicationLocation(FORMS[0],answers),status:s[2],owner:s[3],followUp:i===0?'':offsetDate(s[4]),createdAt:at,formId:FORMS[0].id,answers,notes:[],history:[{at,text:'Fiktive Bewerbung für die Vorschau erstellt'}]};
+ });
 }
-const core={STATUSES,OWNERS,FORMS,QUESTIONS,esc,due,allowedForm,filterRecords,applyUpdate,addNote,fixtures};
+const core={STATUSES,OWNERS,FORMS,QUESTIONS,LKW_QUESTIONS,applicationLocation,esc,due,allowedForm,filterRecords,applyUpdate,addNote,fixtures};
 if(typeof module!=='undefined'&&module.exports){module.exports=core;return}
 root.PortalCore=core;
-const $=id=>document.getElementById(id),KEY='euromaster-recruiting-demo-v1';
+const $=id=>document.getElementById(id),KEY='euromaster-recruiting-demo-lkw-v2';
 let records=fixtures(),forms=FORMS.map(f=>({...f})),view='all',selectedId=null;
 try{const saved=JSON.parse(localStorage.getItem(KEY)||'null');if(saved&&saved.schemaVersion===1&&Array.isArray(saved.records)&&saved.records.length===6&&saved.records.every(r=>typeof r.id==='string'&&r.id.startsWith('DEMO-LEAD-')&&STATUSES.includes(r.status)&&Array.isArray(r.answers)&&Array.isArray(r.notes)&&Array.isArray(r.history))){records=saved.records;forms=FORMS.map(f=>({...f,enabled:typeof saved.forms?.find(s=>s.id===f.id)?.enabled==='boolean'?saved.forms.find(s=>s.id===f.id).enabled:f.enabled}))}}catch{}
 function notify(message){$('toast').textContent=message;$('toast').hidden=false;clearTimeout(notify.timer);notify.timer=setTimeout(()=>$('toast').hidden=true,4000)}
@@ -71,13 +139,13 @@ function render(){
  $('statActive').textContent=records.filter(r=>!['Neu',...CLOSED].includes(r.status)).length;
  $('statDue').textContent=records.filter(r=>due(r)).length;$('navCount').textContent=records.length;$('dueCount').textContent=records.filter(r=>due(r)).length;
  $('resultCount').textContent=visible.length;$('emptyState').hidden=!!visible.length;
- $('applicationRows').innerHTML=visible.map(r=>'<tr><td><div class="candidate"><span class="avatar" aria-hidden="true">'+esc(r.firstName.slice(0,2).toUpperCase())+'</span><div><button data-open="'+esc(r.id)+'">'+esc(r.firstName)+'</button><small>'+date(r.createdAt)+' · Meta-Formular</small></div></div></td><td class="job"><strong>'+esc(r.job)+'</strong><small>'+esc(r.location)+'</small></td><td>'+esc(r.answers.find(a=>a.question===QUESTIONS[1])?.answer||'Nicht angegeben')+'</td><td>'+badge(r.status)+'</td><td>'+esc(r.owner)+'</td><td class="'+(due(r)?'due':'')+'">'+date(r.followUp)+'</td><td><button class="open-row" data-open="'+esc(r.id)+'" aria-label="Bewerbung von '+esc(r.firstName)+' öffnen">›</button></td></tr>').join('');
+ $('applicationRows').innerHTML=visible.map(r=>'<tr><td><div class="candidate"><span class="avatar" aria-hidden="true">'+esc(r.firstName.slice(0,2).toUpperCase())+'</span><div><button data-open="'+esc(r.id)+'">'+esc(r.firstName)+'</button><small>'+date(r.createdAt)+' · Meta-Formular</small></div></div></td><td class="job"><strong>'+esc(r.job)+'</strong><small>'+esc(r.location)+'</small></td><td>'+esc(r.answers.find(a=>a.fieldId==='experience')?.answer||'Nicht angegeben')+'</td><td>'+badge(r.status)+'</td><td>'+esc(r.owner)+'</td><td class="'+(due(r)?'due':'')+'">'+date(r.followUp)+'</td><td><button class="open-row" data-open="'+esc(r.id)+'" aria-label="Bewerbung von '+esc(r.firstName)+' öffnen">›</button></td></tr>').join('');
  $('setupView').hidden=view!=='setup';$('applicationsView').hidden=view==='setup';
  $('pageTitle').textContent=view==='setup'?'Formulare & Meta':view==='due'?'Wiedervorlagen':'Bewerbungen';
  $('listTitle').textContent=view==='due'?'Fällige Wiedervorlagen':'Alle Bewerbungen';
  $('pageSubtitle').textContent=view==='setup'?'Nur ausdrücklich freigegebene Formulare übernehmen.':'Vom ersten Interesse zum persönlichen Gespräch.';
  document.querySelectorAll('[data-view]').forEach(b=>{b.classList.toggle('active',b.dataset.view===view);if(b.dataset.view===view)b.setAttribute('aria-current','page');else b.removeAttribute('aria-current')});
- $('formRegistry').innerHTML='<div class="form-registry">'+forms.map(f=>'<div class="form-row '+(!f.enabled?'form-off':'')+'"><div><strong>'+esc(f.name)+'</strong><small>'+esc(f.id)+'<br>'+esc(f.job||'Stelle offen')+' · '+esc(f.location||'Standort offen')+'<br>'+(f.enabled?'In dieser Demo freigegeben':'Ausgeschlossen · keine Übernahme')+'</small></div><button class="button secondary" data-form="'+esc(f.id)+'">'+(f.enabled?'Demo pausieren':f.job&&f.location?'Demo freigeben':'Nicht eingerichtet')+'</button></div>').join('')+'</div><p class="demo-meta">Die IDs sind fiktiv. Hier werden keine echten Formulare entdeckt, freigeschaltet oder abgerufen. Ein neues Formular benötigt im Produktivsystem eine explizite Freigabe mit Seiten-ID, Formular-ID, Stelle und Standort.</p>';
+ $('formRegistry').innerHTML='<div class="form-registry">'+forms.map(f=>'<div class="form-row '+(!f.enabled?'form-off':'')+'"><div><strong>'+esc(f.name)+'</strong><small>'+esc(f.id)+'<br>'+esc(f.job||'Stelle offen')+' · '+esc(f.location||f.locationOptions?.join(' / ')||'Standort offen')+'<br>'+(f.enabled?'In dieser Demo freigegeben':'Ausgeschlossen · keine Übernahme')+'</small></div><button class="button secondary" data-form="'+esc(f.id)+'">'+(f.enabled?'Demo pausieren':f.job&&(f.location||f.locationOptions?.length)?'Demo freigeben':'Nicht eingerichtet')+'</button></div>').join('')+'</div><p class="demo-meta">Die IDs sind fiktiv. Hier werden keine echten Formulare entdeckt, freigeschaltet oder abgerufen. Ein neues Formular benötigt im Produktivsystem eine explizite Freigabe mit Seiten-ID, Formular-ID, Stelle und Standort.</p>';
 }
 function openDetail(id){
  const r=records.find(x=>x.id===id);if(!r)return;selectedId=id;
@@ -97,7 +165,7 @@ $('clearFilters').addEventListener('click',()=>{['search','statusFilter','locati
 $('applicationRows').addEventListener('click',e=>{const b=e.target.closest('[data-open]');if(b)openDetail(b.dataset.open)});
 $('closeDetail').addEventListener('click',()=>$('detailDialog').close());
 $('detailDialog').addEventListener('click',e=>{if(e.target===$('detailDialog'))$('detailDialog').close()});
-$('formRegistry').addEventListener('click',e=>{const b=e.target.closest('[data-form]');if(!b)return;const f=forms.find(f=>f.id===b.dataset.form);if(!f.job||!f.location){notify('Neue Formulare erst nach Zuordnung und ausdrücklicher Freigabe aktivieren.');return}f.enabled=!f.enabled;save();render();notify('Nur Demo-Einstellung geändert. Vorhandene Bewerbungen bleiben erhalten.')});
+$('formRegistry').addEventListener('click',e=>{const b=e.target.closest('[data-form]');if(!b)return;const f=forms.find(f=>f.id===b.dataset.form);if(!f.job||!(f.location||f.locationQuestionId&&f.locationOptions?.length)){notify('Neue Formulare erst nach Zuordnung und ausdrücklicher Freigabe aktivieren.');return}f.enabled=!f.enabled;save();render();notify('Nur Demo-Einstellung geändert. Vorhandene Bewerbungen bleiben erhalten.')});
 $('resetDemo').addEventListener('click',()=>{if(!confirm('Lokale Demo-Änderungen und Notizen zurücksetzen?'))return;records=fixtures();forms=FORMS.map(f=>({...f}));save();$('detailDialog').close();render();notify('Fiktive Ausgangsdaten wiederhergestellt.')});
 render();
 })(typeof globalThis!=='undefined'?globalThis:this);
