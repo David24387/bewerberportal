@@ -26,7 +26,8 @@ jobs:
       - name: Nur Demo-Dateien bereitstellen
         run: |
           mkdir -p _site
-          cp index.html styles.css portal.js _site/
+          cp index.html styles.css brand.css portal.js _site/
+          cp -R assets _site/
           touch _site/.nojekyll
       - uses: actions/upload-pages-artifact@v3
         with:
@@ -34,3 +35,4 @@ jobs:
       - name: Demo veröffentlichen
         id: deployment
         uses: actions/deploy-pages@v4
+

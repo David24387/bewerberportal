@@ -2,7 +2,7 @@
 (function(root){
 'use strict';
 const STATUSES=['Neu','Kontaktversuch','Im Gespräch','An Fachbereich übergeben','Eingestellt','Abgesagt'];
-const OWNERS=['Nicht zugewiesen','Recruiterin A','Recruiterin B'];
+const OWNERS=['Nicht zugewiesen','Amra','Vlada'];
 const CLOSED=['Eingestellt','Abgesagt'];
 const LKW_QUESTIONS=[
   {
@@ -104,11 +104,11 @@ function applicationLocation(form,answers){
 function fixtures(){
  const specs=[
  ['Alex','77815/Bühl','Neu','Nicht zugewiesen',0,'1 - 4 Jahre','Klasse B (Auto)','Ja','Ja','Telefon / Anruf','Nachmittags'],
- ['Robin','74076/Heilbronn','Kontaktversuch','Recruiterin A',0,'Über 10 Jahre','Klasse C/CE (LKW über 7,5 t)','Ja','Ja','Telefon / Anruf','Abends'],
- ['Kim','77815/Bühl','Im Gespräch','Recruiterin B',1,'4 - 10 Jahre','Klasse C1 (LKW bis 7,5 t)','Nein','Ja','E-Mail',null],
- ['Charlie','74076/Heilbronn','An Fachbereich übergeben','Recruiterin A',2,'Berufseinsteiger','Klasse B (Auto)','Ja','Nein','E-Mail',null],
+ ['Robin','74076/Heilbronn','Kontaktversuch','Amra',0,'Über 10 Jahre','Klasse C/CE (LKW über 7,5 t)','Ja','Ja','Telefon / Anruf','Abends'],
+ ['Kim','77815/Bühl','Im Gespräch','Vlada',1,'4 - 10 Jahre','Klasse C1 (LKW bis 7,5 t)','Nein','Ja','E-Mail',null],
+ ['Charlie','74076/Heilbronn','An Fachbereich übergeben','Amra',2,'Berufseinsteiger','Klasse B (Auto)','Ja','Nein','E-Mail',null],
  ['Sam','77815/Bühl','Neu','Nicht zugewiesen',-1,'1 - 4 Jahre','Klasse B (Auto)','Nein','Ja','Telefon / Anruf','Morgens'],
- ['Jules','74076/Heilbronn','Eingestellt','Recruiterin B',-2,'4 - 10 Jahre','Klasse C/CE (LKW über 7,5 t)','Ja','Ja','Telefon / Anruf','Mittags']
+ ['Jules','74076/Heilbronn','Eingestellt','Vlada',-2,'4 - 10 Jahre','Klasse C/CE (LKW über 7,5 t)','Ja','Ja','Telefon / Anruf','Mittags']
  ];
  return specs.map((s,i)=>{
  const at=new Date(Date.now()-i*19*60*60*1000).toISOString();
@@ -122,7 +122,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=core;return}
 root.PortalCore=core;
 const $=id=>document.getElementById(id),KEY='euromaster-recruiting-demo-lkw-v2';
 let records=fixtures(),forms=FORMS.map(f=>({...f})),view='all',selectedId=null;
-try{const saved=JSON.parse(localStorage.getItem(KEY)||'null');if(saved&&saved.schemaVersion===1&&Array.isArray(saved.records)&&saved.records.length===6&&saved.records.every(r=>typeof r.id==='string'&&r.id.startsWith('DEMO-LEAD-')&&STATUSES.includes(r.status)&&Array.isArray(r.answers)&&Array.isArray(r.notes)&&Array.isArray(r.history))){records=saved.records;forms=FORMS.map(f=>({...f,enabled:typeof saved.forms?.find(s=>s.id===f.id)?.enabled==='boolean'?saved.forms.find(s=>s.id===f.id).enabled:f.enabled}))}}catch{}
+try{const saved=JSON.parse(localStorage.getItem(KEY)||'null');if(saved&&saved.schemaVersion===1&&Array.isArray(saved.records)&&saved.records.length===6&&saved.records.every(r=>typeof r.id==='string'&&r.id.startsWith('DEMO-LEAD-')&&STATUSES.includes(r.status)&&Array.isArray(r.answers)&&Array.isArray(r.notes)&&Array.isArray(r.history))){records=saved.records.map(r=>({...r,owner:({'Recruiterin A':'Amra','Recruiterin B':'Vlada'})[r.owner]||r.owner}));forms=FORMS.map(f=>({...f,enabled:typeof saved.forms?.find(s=>s.id===f.id)?.enabled==='boolean'?saved.forms.find(s=>s.id===f.id).enabled:f.enabled}))}}catch{}
 function notify(message){$('toast').textContent=message;$('toast').hidden=false;clearTimeout(notify.timer);notify.timer=setTimeout(()=>$('toast').hidden=true,4000)}
 function save(){try{localStorage.setItem(KEY,JSON.stringify({schemaVersion:1,records,forms}));return true}catch{notify('Speichern im Browser nicht möglich. Änderungen gelten nur bis zum Neuladen.');return false}}
 function date(v){return v?new Date(v.length===10?v+'T12:00:00':v).toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric'}):'—'}
@@ -169,3 +169,4 @@ $('formRegistry').addEventListener('click',e=>{const b=e.target.closest('[data-f
 $('resetDemo').addEventListener('click',()=>{if(!confirm('Lokale Demo-Änderungen und Notizen zurücksetzen?'))return;records=fixtures();forms=FORMS.map(f=>({...f}));save();$('detailDialog').close();render();notify('Fiktive Ausgangsdaten wiederhergestellt.')});
 render();
 })(typeof globalThis!=='undefined'?globalThis:this);
+

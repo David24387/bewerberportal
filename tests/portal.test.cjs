@@ -20,7 +20,7 @@ test('Due view includes today and overdue, excludes closed cases',()=>{
 });
 test('Combined filters preserve complete original question answers',()=>{
  const records=C.fixtures();
- const result=C.filterRecords(records,{location:'74076/Heilbronn',status:'Kontaktversuch',owner:'Recruiterin A',search:'Robin'});
+ const result=C.filterRecords(records,{location:'74076/Heilbronn',status:'Kontaktversuch',owner:'Amra',search:'Robin'});
  assert.equal(result.length,1);assert.equal(result[0].answers.length,7);
  assert.equal(result[0].answers[6].question,'Für welchen Standort interessierst du dich?');
  assert.equal(C.filterRecords(records,{search:'no-match'}).length,0);
@@ -33,11 +33,11 @@ test('Unknown future questions remain available and searchable',()=>{
 });
 test('Updates preserve original application and add history only on changes',()=>{
  const r=C.fixtures()[0];
- const updated=C.applyUpdate(r,{status:'Im Gespräch',owner:'Recruiterin A',followUp:'2026-11-02'},'2026-10-22T12:00:00Z');
+ const updated=C.applyUpdate(r,{status:'Im Gespräch',owner:'Amra',followUp:'2026-11-02'},'2026-10-22T12:00:00Z');
  assert.equal(r.status,'Neu');assert.equal(updated.answers,r.answers);
  assert.equal(updated.history.length,r.history.length+1);
  assert.equal(C.applyUpdate(updated,updated).history.length,updated.history.length);
- assert.throws(()=>C.applyUpdate(r,{status:'AUTO-REJECT',owner:'Recruiterin A',followUp:''}));
+ assert.throws(()=>C.applyUpdate(r,{status:'AUTO-REJECT',owner:'Amra',followUp:''}));
  assert.throws(()=>C.applyUpdate(r,{status:'Neu',owner:'Unknown',followUp:''}));
  assert.throws(()=>C.applyUpdate(r,{status:'Neu',owner:C.OWNERS[0],followUp:'2026-02-31'}));
 });
@@ -81,3 +81,4 @@ test('Location is resolved only against configured answers, never guessed',()=>{
  assert.equal(C.applicationLocation(form,[]),'Standort fehlt – prüfen');
  assert.equal(C.applicationLocation(form,[{fieldId:'location',answer:'Andere Stadt'}]),'Standort fehlt – prüfen');
 });
+
