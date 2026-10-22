@@ -67,7 +67,7 @@ function leadRow_(lead, now) {
   const answers = lead.field_data.map(f => String(f.name) + ': ' + (f.values || []).map(String).join(' | ')).join('\n');
   return [String(lead.id), lead.created_time, now, PORTAL.formId,
     'Lkw-Reifenmonteur/in · Bühl / Heilbronn', fields.first_name || fields.full_name || '',
-    fields.email || '', fields.phone_number || '', 'Neu', 'Nicht zugewiesen', '', '', '', answers].map(cellText_);
+    fields.email || '', fields.phone_number || '', 'Neu', 'Nicht zugewiesen', '', '', '', JSON.stringify(lead.field_data)].map(cellText_);
 }
 
 function config_() {
@@ -107,6 +107,7 @@ function syncApplications() {
     const p = config_();
     const sheet = SpreadsheetApp.openById(PORTAL.spreadsheetId).getSheetByName(PORTAL.sheetName);
     assertHeaders_(sheet);
+    splitAnswerColumns_(sheet);
     const started = Date.now();
     const base = Math.max(Date.parse(p.IMPORT_FROM), Date.parse(p.LAST_SUCCESS || p.IMPORT_FROM) - 24 * 3600000);
     const since = Math.floor(base / 1000) - 1;
@@ -133,6 +134,7 @@ function syncApplications() {
       after = result.paging && result.paging.next ? result.paging.cursors && result.paging.cursors.after : '';
       if (result.paging && result.paging.next && !after) throw new Error('Meta-Paginierung ohne Cursor.');
     } while (after);
+    splitAnswerColumns_(sheet);
     props.setProperty('LAST_SUCCESS', new Date(started).toISOString());
     notifyPending_(sheet, p);
   } finally { lock.releaseLock(); }
@@ -171,4 +173,104 @@ function pauseAutomaticSync() {
   ScriptApp.getProjectTriggers().filter(t => t.getHandlerFunction() === 'syncApplications').forEach(t => ScriptApp.deleteTrigger(t));
 }
 
-if (typeof module !== 'undefined') module.exports = {PORTAL, cellText_, leadRow_};
+
+// Run once after updating. Does not call Meta or send email.
+function upgradeAnswerColumns() {
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(1000)) throw new Error('Ein Abruf läuft gerade. Bitte erneut versuchen.');
+  try {
+    const sheet = SpreadsheetApp.openById(PORTAL.spreadsheetId).getSheetByName(PORTAL.sheetName);
+    assertHeaders_(sheet);
+    splitAnswerColumns_(sheet);
+    console.log('Formularantworten auf eigene Spalten verteilt. Bearbeitungsdaten bleiben erhalten.');
+  } finally { lock.releaseLock(); }
+}
+
+function parseAnswers_(raw) {
+  const text = String(raw || '');
+  try {
+    const data = JSON.parse(text);
+    if (Array.isArray(data)) return data.map(f => ({
+      name: String(f.name), value: (f.values || []).map(String).join(' | ')
+    }));
+  } catch (_) {}
+  // Migration of the original readable snapshot. Split on the first colon only.
+  const answers = [];
+  text.split('\n').forEach(line => {
+    const colon = line.indexOf(': ');
+    if (colon > 0) answers.push({name: line.slice(0, colon), value: line.slice(colon + 2)});
+    else if (answers.length) answers[answers.length - 1].value += '\n' + line;
+  });
+  return answers;
+}
+
+function questionHeading_(name) {
+  // Keep the exact Meta field key as identity; only headings are made readable.
+  const clean = name.replace(/_/g, ' ').trim();
+  return clean ? clean[0].toLocaleUpperCase('de') + clean.slice(1) : 'Unbenannte Frage';
+}
+
+function splitAnswerColumns_(sheet) {
+  if (sheet.getLastRow() < 2) return;
+  const rows = sheet.getRange(2, 14, sheet.getLastRow() - 1, 1).getValues();
+  const parsed = rows.map(r => parseAnswers_(r[0]));
+  const skip = new Set(['first_name', 'full_name', 'email', 'phone_number']);
+  const fields = [...new Set(parsed.flat().map(f => f.name).filter(n => !skip.has(n)))];
+  if (!fields.length) return;
+  let last = sheet.getLastColumn();
+  const notes = sheet.getRange(1, 1, 1, last).getNotes()[0];
+  const headers = sheet.getRange(1, 1, 1, last).getDisplayValues()[0];
+  let changed = false;
+  fields.forEach(name => {
+    const identity = 'META_FIELD:' + name;
+    let column = notes.indexOf(identity) + 1;
+    if (!column) {
+      // Refuse to claim a manually created column with the same heading.
+      let heading = questionHeading_(name);
+      if (headers.includes(heading)) heading += ' [Meta ' + name + ']';
+      column = ++last;
+      if (column > sheet.getMaxColumns()) sheet.insertColumnsAfter(sheet.getMaxColumns(), column - sheet.getMaxColumns());
+      sheet.getRange(1, column).setValue(cellText_(heading)).setNote(identity)
+        .setBackground('#008c43').setFontColor('#ffffff').setFontWeight('bold').setWrap(true);
+      sheet.setColumnWidth(column, 230);
+      notes[column - 1] = identity;
+      headers[column - 1] = heading;
+      changed = true;
+    }
+    const range = sheet.getRange(2, column, rows.length, 1);
+    const current = range.getValues();
+    let dirty = false;
+    parsed.forEach((answers, i) => {
+      const match = answers.find(f => f.name === name);
+      if (match && current[i][0] === '') {
+        current[i][0] = cellText_(match.value);
+        dirty = true;
+      }
+    });
+    if (dirty) range.setNumberFormat('@').setValues(current).setWrap(true);
+  });
+  // Preserve the full snapshot, but show the individual answers in the working view.
+  sheet.hideColumns(14);
+  const filter = sheet.getFilter();
+  if (changed && filter) {
+    // Preserve existing filters and sort order. Expand the filter manually if needed.
+    console.log('Neue Antwortspalten hinzugefügt. Bestehende Filter wurden nicht verändert.');
+  }
+  SpreadsheetApp.flush();
+}
+
+if (typeof module !== 'undefined') module.exports = {PORTAL, cellText_, leadRow_, parseAnswers_, questionHeading_};
+
+function testMetaConnection() {
+  const p = PropertiesService.getScriptProperties();
+  const token = p.getProperty('META_ACCESS_TOKEN');
+  const version = p.getProperty('META_API_VERSION');
+  if (!token || !/^v\d+\.0$/.test(version || '')) throw new Error('Token oder API-Version fehlt.');
+  const response = UrlFetchApp.fetch('https://graph.facebook.com/' + version + '/' + PORTAL.formId + '/leads?fields=id,form_id&limit=1',
+    {method: 'get', headers: {Authorization: 'Bearer ' + token}, muteHttpExceptions: true, followRedirects: false});
+  const data = JSON.parse(response.getContentText());
+  if (response.getResponseCode() !== 200 || data.error) throw new Error('Meta-Zugriff fehlgeschlagen. HTTP ' + response.getResponseCode() +
+    ', Fehlercode ' + (data.error?.code || 'unbekannt') + ', Untercode ' + (data.error?.error_subcode || 'keiner'));
+  if (!Array.isArray(data.data)) throw new Error('Unerwartete Meta-Antwort.');
+  console.log('Verbindung erfolgreich. ' + (data.data.length ? 'Ein Lead ist abrufbar.' : 'Aktuell keine abrufbaren Leads vorhanden.'));
+}
