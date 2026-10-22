@@ -7,7 +7,7 @@ const PORTAL = Object.freeze({
   formId: '1067596719431599',
   sheetName: 'Bewerbungen',
   headers: ['Meta-Lead-ID', 'Eingang bei Meta', 'Übernommen am', 'Formular-ID',
-    'Stelle', 'Vorname', 'E-Mail', 'Telefon', 'Status', 'Zuständig',
+    'Stelle', 'Name', 'E-Mail', 'Telefon', 'Status', 'Zuständig',
     'Wiedervorlage', 'Interne Notizen', 'Benachrichtigt am', 'Alle Formularantworten'],
   statuses: ['Neu', 'Kontaktversuch', 'Im Gespräch', 'An Fachbereich übergeben', 'Eingestellt', 'Abgesagt'],
   owners: ['Nicht zugewiesen', 'Amra', 'Vlada']
@@ -43,6 +43,7 @@ function setupTable() {
 }
 
 function assertHeaders_(sheet) {
+  if (sheet && sheet.getRange(1, 6).getValue() === 'Vorname') sheet.getRange(1, 6).setValue('Name');
   if (!sheet || JSON.stringify(sheet.getRange(1, 1, 1, PORTAL.headers.length).getValues()[0]) !== JSON.stringify(PORTAL.headers)) {
     throw new Error('Tabellenüberschriften fehlen oder wurden verändert. Bitte setupTable prüfen.');
   }
@@ -62,12 +63,12 @@ function leadRow_(lead, now) {
   if (!Array.isArray(lead.field_data) || !Number.isFinite(Date.parse(lead.created_time))) {
     throw new Error('Meta hat unvollständige Bewerbungsdaten geliefert.');
   }
-  const fields = {};
-  lead.field_data.forEach(f => { fields[String(f.name)] = (f.values || []).map(String).join(' | '); });
+  const fields = Object.create(null);
+  lead.field_data.forEach(f => { fields[String(f.name)] = (f.values || []).map(String).join(' | '); const contact = contactColumn_(f.name); if (contact) fields['contact_' + contact] = (f.values || []).map(String).join(' | '); });
   const answers = lead.field_data.map(f => String(f.name) + ': ' + (f.values || []).map(String).join(' | ')).join('\n');
   return [String(lead.id), lead.created_time, now, PORTAL.formId,
-    'Lkw-Reifenmonteur/in · Bühl / Heilbronn', fields.first_name || fields.full_name || '',
-    fields.email || '', fields.phone_number || '', 'Neu', 'Nicht zugewiesen', '', '', '', JSON.stringify(lead.field_data)].map(cellText_);
+    'Lkw-Reifenmonteur/in · Bühl / Heilbronn', fields.full_name || fields.contact_6 || fields.first_name || '',
+    fields.email || fields.contact_7 || '', fields.phone_number || fields.contact_8 || '', 'Neu', 'Nicht zugewiesen', '', '', '', JSON.stringify(lead.field_data)].map(cellText_);
 }
 
 function config_() {
@@ -204,22 +205,69 @@ function parseAnswers_(raw) {
   return answers;
 }
 
+function normalizedField_(name) {
+  return String(name).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
+function contactColumn_(name) {
+  const key = normalizedField_(name);
+  if (['first name', 'full name', 'name', 'vorname', 'vollstandiger name'].includes(key)) return 6;
+  if (['email', 'e mail', 'e mail adresse', 'email adresse', 'email address'].includes(key)) return 7;
+  if (['phone number', 'phone', 'telefon', 'telefonnummer', 'telefon nummer', 'mobile phone number'].includes(key)) return 8;
+  return 0;
+}
+
 function questionHeading_(name) {
-  // Keep the exact Meta field key as identity; only headings are made readable.
-  const clean = name.replace(/_/g, ' ').trim();
+  const key = normalizedField_(name);
+  // Specific question first: malformed export labels can contain previous questions.
+  if (key.includes('ausbildung') && (key.includes('mechatroniker') || key.includes('vergleichbares'))) return 'KFZ-Ausbildung';
+  if (key.includes('erfahrung') && key.includes('reifenmontage')) return 'Erfahrung LKW-Reifenmontage';
+  if (key.includes('berufserfahrung')) return 'Berufserfahrung';
+  if (key.includes('telefonisch erreichen')) return 'Telefonische Erreichbarkeit';
+  if (key.includes('besten kontaktieren')) return 'Kontaktwunsch';
+  if (key.includes('standort') && key.includes('interessier')) return 'Wunschstandort';
+  if (key.includes('fuhrerschein')) return 'Führerschein';
+  const clean = String(name).replace(/_/g, ' ').trim();
   return clean ? clean[0].toLocaleUpperCase('de') + clean.slice(1) : 'Unbenannte Frage';
+}
+
+function tidyApplications() {
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(1000)) throw new Error('Ein Abruf läuft gerade. Bitte erneut versuchen.');
+  try {
+    const sheet = SpreadsheetApp.openById(PORTAL.spreadsheetId).getSheetByName(PORTAL.sheetName);
+    assertHeaders_(sheet);
+    splitAnswerColumns_(sheet);
+    sheet.hideColumns(1, 4);
+    sheet.hideColumns(13, 2);
+    console.log('Ansicht bereinigt. Technische und doppelte Spalten sind ausgeblendet; keine Daten gelöscht.');
+  } finally { lock.releaseLock(); }
 }
 
 function splitAnswerColumns_(sheet) {
   if (sheet.getLastRow() < 2) return;
   const rows = sheet.getRange(2, 14, sheet.getLastRow() - 1, 1).getValues();
   const parsed = rows.map(r => parseAnswers_(r[0]));
-  const skip = new Set(['first_name', 'full_name', 'email', 'phone_number']);
-  const fields = [...new Set(parsed.flat().map(f => f.name).filter(n => !skip.has(n)))];
-  if (!fields.length) return;
+  const fields = [...new Set(parsed.flat().map(f => f.name).filter(n => !contactColumn_(n)))];
+  // Fill only empty contact cells. Never replace manually corrected contacts.
+  const contacts = sheet.getRange(2, 6, rows.length, 3).getValues();
+  let contactsChanged = false;
+  parsed.forEach((answers, i) => {
+    answers.filter(f => contactColumn_(f.name)).sort((a, b) =>
+      Number(normalizedField_(b.name) === 'full name') - Number(normalizedField_(a.name) === 'full name')
+    ).forEach(f => {
+      const j = contactColumn_(f.name) - 6;
+      if (contacts[i][j] === '' && f.value !== '') { contacts[i][j] = cellText_(f.value); contactsChanged = true; }
+    });
+  });
+  if (contactsChanged) sheet.getRange(2, 6, rows.length, 3).setNumberFormat('@').setValues(contacts);
   let last = sheet.getLastColumn();
   const notes = sheet.getRange(1, 1, 1, last).getNotes()[0];
   const headers = sheet.getRange(1, 1, 1, last).getDisplayValues()[0];
+  // Existing duplicate contact columns are preserved but hidden.
+  notes.forEach((note, i) => {
+    if (i >= 14 && note.startsWith('META_FIELD:') && contactColumn_(note.slice(11))) sheet.hideColumns(i + 1);
+  });
   let changed = false;
   fields.forEach(name => {
     const identity = 'META_FIELD:' + name;
@@ -237,6 +285,7 @@ function splitAnswerColumns_(sheet) {
       headers[column - 1] = heading;
       changed = true;
     }
+    sheet.getRange(1, column).setValue(cellText_(questionHeading_(name)));
     const range = sheet.getRange(2, column, rows.length, 1);
     const current = range.getValues();
     let dirty = false;
@@ -259,7 +308,7 @@ function splitAnswerColumns_(sheet) {
   SpreadsheetApp.flush();
 }
 
-if (typeof module !== 'undefined') module.exports = {PORTAL, cellText_, leadRow_, parseAnswers_, questionHeading_};
+if (typeof module !== 'undefined') module.exports = {PORTAL, cellText_, leadRow_, parseAnswers_, questionHeading_, contactColumn_};
 
 function testMetaConnection() {
   const p = PropertiesService.getScriptProperties();
